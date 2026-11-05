@@ -4,7 +4,7 @@ app = Flask(__name__)
 
 @app.route("/")
 def home():
-    return f"{os.getenv('GREETING', 'Hello')} from version 2\n"
+    return f"{os.getenv('GREETING', 'Hello')} from version 3\n"
 
 @app.route("/health")
 def health():
