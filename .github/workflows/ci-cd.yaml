@@ -1,27 +1,50 @@
 name: CI-CD
+
 on:
   push:
     branches: [main]
+  workflow_dispatch:   # lets you run it manually from the Actions tab
 
 jobs:
   deploy:
     runs-on: self-hosted
+    timeout-minutes: 15
     defaults:
       run:
         shell: powershell
-    steps:
-      - uses: actions/checkout@v4
 
-      - name: Build image inside minikube
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check tools
         run: |
-          & minikube -p minikube docker-env --shell powershell | Invoke-Expression
+          docker version --format '{{.Server.Version}}'
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          minikube status
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          kubectl get nodes
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Build image and load into minikube
+        run: |
           docker build -t demo-app:${{ github.sha }} .
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          minikube image load demo-app:${{ github.sha }}
+          if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Update image tag in deployment.yaml
         run: |
-          (Get-Content k8s/deployment.yaml) -replace 'image: demo-app:.*', 'image: demo-app:${{ github.sha }}' | Set-Content k8s/deployment.yaml
+          (Get-Content k8s/deployment.yaml) -replace 'image: demo-app:.*', 'image: demo-app:${{ github.sha }}' | Set-Content -Encoding ascii k8s/deployment.yaml
+          Select-String -Path k8s/deployment.yaml -Pattern 'image:'
 
-      - name: Deploy
+      - name: Deploy to Kubernetes
         run: |
           kubectl apply -f k8s/
+          if ($LASTEXITCODE -ne 0) { exit 1 }
           kubectl rollout status deployment/demo-app --timeout=120s
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Show result
+        run: |
+          kubectl get pods,svc,deployment
